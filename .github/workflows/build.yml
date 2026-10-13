@@ -1,0 +1,43 @@
+name: Build iPhone app
+
+on:
+  workflow_dispatch: {}
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate the Xcode project
+        run: xcodegen generate
+
+      - name: Build the app (unsigned; SideStore signs it on your phone)
+        run: |
+          xcodebuild -project GapVocab.xcodeproj -target GapVocab -configuration Release \
+            -sdk iphoneos SYMROOT="$PWD/build" \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            build | tail -n 60
+
+      - name: Package as .ipa
+        run: |
+          mkdir -p Payload
+          cp -R build/Release-iphoneos/GapVocab.app Payload/
+          zip -qry GapVocab.ipa Payload
+          ls -la GapVocab.ipa
+
+      - name: Publish as the "latest" release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete latest --yes --cleanup-tag || true
+          gh release create latest GapVocab.ipa --title "Gap Vocab (latest build)" \
+            --notes "Open this page on your iPhone, download GapVocab.ipa, then add it in SideStore."
